@@ -27,26 +27,6 @@ const getAngle = ({ x: x1, y: y1 }, { x: x2, y: y2 }) => {
 const getDistance = vector => {
   return Math.sqrt(vector.x * vector.x + vector.y * vector.y);
 };
-// const getScale = ({ x: x1, y: y1 }, { x: x2, y: y2 }) => {
-//   const distance1 = Math.sqrt(x1 * x1 + y1 + y1);
-//   const distance2 = Math.sqrt(x2 * x2 + y2 + y2);
-//   if (!distance1) {
-//     return 1;
-//   }
-//   return distance2 / distance1;
-// };
-
-// function getTranslate(element) {
-//   const style = getComputedStyle(element);
-//   const result = style.transform.slice(7, -1).split(", ");
-
-//   if (result) {
-//     return {
-//       x: parseInt(result[4], 10),
-//       y: parseInt(result[5], 10)
-//     };
-//   }
-// }
 
 const getVector = e => {
   let e0 = e.targetTouches[0];

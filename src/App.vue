@@ -1,26 +1,21 @@
 <template>
-  <div id="box">
-    <span id="edit"></span>
+  <div id="box" :style="boxStyle">
+    <span id="edit" v-show="editVisible" :style="editStyle"></span>
   </div>
 </template>
 
 <script>
-// import Vue from "vue";
-
-// import Rx from "rxjs/Rx";
 import { fromEvent, merge } from "rxjs";
 import {
   // throttleTime,
   map,
   // scan,
   switchMap,
-  takeUntil
+  takeUntil,
+  tap,
+  filter
   // tap
 } from "rxjs/operators";
-
-// function setTranslate(element, pos) {
-//   element.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
-// }
 
 const getAngle = ({ x: x1, y: y1 }, { x: x2, y: y2 }) => {
   const dot = x1 * x2 + y1 * y2;
@@ -29,6 +24,9 @@ const getAngle = ({ x: x1, y: y1 }, { x: x2, y: y2 }) => {
   return (angle + 360) % 360;
 };
 
+const getDistance = vector => {
+  return Math.sqrt(vector.x * vector.x + vector.y * vector.y);
+};
 // const getScale = ({ x: x1, y: y1 }, { x: x2, y: y2 }) => {
 //   const distance1 = Math.sqrt(x1 * x1 + y1 + y1);
 //   const distance2 = Math.sqrt(x2 * x2 + y2 + y2);
@@ -50,9 +48,19 @@ const getAngle = ({ x: x1, y: y1 }, { x: x2, y: y2 }) => {
 //   }
 // }
 
+const getVector = e => {
+  let e0 = e.targetTouches[0];
+  let e1 = e.targetTouches[1];
+  return {
+    x: e0.clientX - e1.clientX,
+    y: e0.clientY - e1.clientY
+  };
+};
+
 export default {
   data() {
     return {
+      editVisible: true,
       rotateAngle: 0,
       scale: 1,
       pos: {
@@ -60,6 +68,18 @@ export default {
         y: 10
       }
     };
+  },
+  computed: {
+    boxStyle() {
+      const { rotateAngle, pos } = this;
+      const { scale } = this;
+
+      return `transform: translate(${pos.x}px, ${pos.y}px) rotate(${rotateAngle}deg) scale(${scale});`;
+    },
+    editStyle() {
+      const { scale } = this;
+      return `transform:scale(${1 / scale})`;
+    }
   },
   mounted() {
     const box = document.getElementById("box");
@@ -79,10 +99,49 @@ export default {
       fromEvent(document, "touchend")
     );
 
+    const scaleStart$ = fromEvent(document, "touchstart");
+
     const selectEdit$ = merge(
       fromEvent(edit, "mousedown"),
       fromEvent(edit, "touchstart")
     );
+
+    scaleStart$
+      .pipe(
+        filter(e => {
+          return e.targetTouches && e.targetTouches.length > 1;
+        }),
+        map(e => {
+          return {
+            startVector: getVector(e),
+            scale: this.scale
+          };
+        }),
+        switchMap(({ startVector, scale }) => {
+          return mouseMove$.pipe(
+            filter(e => {
+              return (
+                e.type === "touchmove" &&
+                e.targetTouches &&
+                e.targetTouches.length > 1
+              );
+            }),
+            map(e => {
+              const moveVector = getVector(e);
+              return (
+                (getDistance(moveVector) / getDistance(startVector)) * scale
+              );
+            }),
+            takeUntil(mouseUp$)
+          );
+        })
+      )
+      .subscribe(scale => {
+        this.scale = scale;
+        // const { rotateAngle, pos } = this;
+        // box.style.transform = `translate(${pos.x}px, ${pos.y}px) rotate(${rotateAngle}deg) scale(${scale})`;
+        // edit.style.transform = `scale(${1 / scale})`;
+      });
 
     mouseDown$
       .pipe(
@@ -115,26 +174,31 @@ export default {
       )
       .subscribe(pos => {
         this.pos = pos;
-        const { rotateAngle, scale } = this;
+        // const { rotateAngle, scale } = this;
 
-        box.style.transform = `translate(${pos.x}px, ${pos.y}px) rotate(${rotateAngle}deg) scale(${scale})`;
+        // box.style.transform = `translate(${pos.x}px, ${pos.y}px) rotate(${rotateAngle}deg) scale(${scale})`;
       });
 
-    const distance = Math.sqrt(20 * 20 + 40 * 40);
+    const distance = getDistance({
+      x: 20,
+      y: 40
+    });
 
     selectEdit$
       .pipe(
         map(e => {
           if (e.stopPropagation) e.stopPropagation();
           if (e.preventDefault) e.preventDefault();
-          e = e.targetTouches[0];
+          if (e.type === "touchstart") {
+            e = e.targetTouches[0];
+          }
           const { clientX, clientY } = e;
           const rect = box.getBoundingClientRect();
           const center = {
             x: rect.left + rect.width / 2,
             y: rect.top + rect.height / 2
           };
-
+          this.editVisible = false;
           return {
             // startVector,
             center,
@@ -161,17 +225,19 @@ export default {
                 y: clientY - center.y
               };
               const angle = getAngle(startVector, rotateVector) + rotateAngle;
-              const scale =
-                Math.sqrt(
-                  rotateVector.x * rotateVector.x +
-                    rotateVector.y * rotateVector.y
-                ) / distance;
+              const scale = getDistance(rotateVector) / distance;
               return {
                 scale,
                 rotateAngle: angle
               };
             }),
-            takeUntil(mouseUp$)
+            takeUntil(
+              mouseUp$.pipe(
+                tap(() => {
+                  this.editVisible = true;
+                })
+              )
+            )
           );
         })
       )
@@ -182,8 +248,9 @@ export default {
           scale = 1;
         }
         this.scale = scale;
-        const { pos } = this;
-        box.style.transform = `translate(${pos.x}px, ${pos.y}px) rotate(${rotateAngle}deg) scale(${scale})`;
+        // const { pos } = this;
+        // box.style.transform = `translate(${pos.x}px, ${pos.y}px) rotate(${rotateAngle}deg) scale(${scale})`;
+        // edit.style.transform = `scale(${1 / scale})`;
       });
   },
   methods: {}
@@ -191,6 +258,11 @@ export default {
 </script>
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
+<style>
+body {
+  overflow: hidden;
+}
+</style>
 <style scoped>
 #box {
   position: absolute;
@@ -206,12 +278,13 @@ export default {
 }
 #edit {
   position: absolute;
-  bottom: 0;
-  right: 0;
+  bottom: -10px;
+  right: -10px;
   width: 20px;
   height: 20px;
   line-height: 20px;
-  background-color: #fff;
+  background-color: yellow;
+  border-radius: 50%;
   z-index: 1;
 }
 </style>
